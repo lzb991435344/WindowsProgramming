@@ -12,8 +12,28 @@ Notices: Copyright (c) 2008 Jeffrey Richter & Christophe Nasarre
 #include <tchar.h>
 #include <strsafe.h>
 
+/**
+跨进程边界共享内核对象
+(1)使用对象句柄继承
+(2)为对象命名
+(3)复制对象句柄
+
+*/
 
 
+//创建专属的命名空间
+
+/**
+ 创建内核对象的时候，可以传递一个指向SECURITY_ATTRIBUTE结构的指针
+ 
+ (1)如何创建一个边界
+ (2)如何将一个应用于本地管理员组的一个sid和它关联起来
+ (3)如何创建或打开其名称被用作互斥量内核对象前缀的一个专有命名空间
+
+
+ 目的：边界描述符会获得一个名称，获得与特权用户组关联的sid
+ window只有在该用户隶属于特权组时，在相同边界中创建命名空间，访问内核对象
+*/
 ///////////////////////////////////////////////////////////////////////////////
 
 
@@ -29,6 +49,7 @@ HANDLE   g_hNamespace = NULL;
 BOOL     g_bNamespaceOpened = FALSE;
 
 // Names of boundary and private namespace
+//创建边界描述符，参数1：字符串标识符来定义范围
 PCTSTR   g_szBoundary = TEXT("3-Boundary");
 PCTSTR   g_szNamespace = TEXT("3-Namespace");
 
@@ -78,12 +99,20 @@ void Dlg_OnCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 void CheckInstances() {
 
    // Create the boundary descriptor
+   //HANDLE CreateBoundaryDescriptor(PCTSTR pszName, DWORD dwFlags)
+   //功能：创建边界描述符
+   //参数1：字符串标识符
+   //参数2:0
+   //返回值：指针，指向用户模式的结构
+   //PS：不要将返回的句柄传入CloseHandle(),而是DeleteBoundaryDescriptor()
    g_hBoundary = CreateBoundaryDescriptor(g_szBoundary, 0);
 
    // Create a SID corresponding to the Local Administrator group
    BYTE localAdminSID[SECURITY_MAX_SID_SIZE];
    PSID pLocalAdminSID = &localAdminSID;
    DWORD cbSID = sizeof(localAdminSID);
+
+   //创建一个安全描述符sid
    if (!CreateWellKnownSid(
       WinBuiltinAdministratorsSid, NULL, pLocalAdminSID, &cbSID)
       ) {
@@ -95,16 +124,23 @@ void CheckInstances() {
    // Associate the Local Admin SID to the boundary descriptor
    // --> only applications running under an administrator user
    //     will be able to access the kernel objects in the same namespace
+   //BOOL AddSIDToBoundaryDescriptor(HANDLE* phBoundaryDescription, PSID pRequireSid)
+   //功能：将一个特权用户的SID关联边界描述符
+   //参数1：边界描述符  参数2：SID
+   //返回值：BOOL
    if (!AddSIDToBoundaryDescriptor(&g_hBoundary, pLocalAdminSID)) {
       AddText(TEXT("AddSIDToBoundaryDescriptor failed: %u\r\n"), 
-         GetLastError());
+         GetLastError()); //获取错误码
       return;
    }
 
    // Create the namespace for Local Administrators only
    SECURITY_ATTRIBUTES sa;
-   sa.nLength = sizeof(sa);
-   sa.bInheritHandle = FALSE;
+   sa.nLength = sizeof(sa);//字节数
+   sa.bInheritHandle = FALSE;//无法继承
+
+   //参数1：安全描述字符串
+   //ConvertStringSecurityDescriptorToSecurityDescriptor构造SECURITY_ATTRIBUTES
    if (!ConvertStringSecurityDescriptorToSecurityDescriptor(
       TEXT("D:(A;;GA;;;BA)"), 
       SDDL_REVISION_1, &sa.lpSecurityDescriptor, NULL)) {
@@ -112,6 +148,7 @@ void CheckInstances() {
       return;
    }
 
+   //创建专有命名空间，已有，返回NULL
    g_hNamespace = 
       CreatePrivateNamespace(&sa, g_hBoundary, g_szNamespace);
 
@@ -133,6 +170,8 @@ void CheckInstances() {
          // If another instance has already created the namespace, 
          // we need to open it instead. 
             AddText(TEXT("CreatePrivateNamespace failed: %u\r\n"), dwLastError);
+
+            //功能：打开现有的专有命名空间
             g_hNamespace = OpenPrivateNamespace(g_hBoundary, g_szNamespace);
             if (g_hNamespace == NULL) {
                AddText(TEXT("   and OpenPrivateNamespace failed: %u\r\n"), 
@@ -220,9 +259,12 @@ int APIENTRY _tWinMain(HINSTANCE hInstance,
    }
 
    if (g_hNamespace != NULL) {
-      if (g_bNamespaceOpened) {  // Open namespace
+      if (g_bNamespaceOpened) {  
+         // Open namespace
+         //0 关闭后仍然可见
          ClosePrivateNamespace(g_hNamespace, 0);
       } else { // Created namespace
+         //PRIVATE_NAMESPACE_FLAG_DESTROY 关闭后不可见
          ClosePrivateNamespace(g_hNamespace, PRIVATE_NAMESPACE_FLAG_DESTROY);
       }
    }
