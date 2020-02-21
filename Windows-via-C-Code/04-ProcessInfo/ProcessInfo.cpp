@@ -52,7 +52,7 @@ void AddText(HWND hwnd, PCTSTR pszFormat, ...) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-
+//获取进程等级
 BOOL GetProcessIntegrityLevel(HANDLE hProcess, PDWORD pIntegrityLevel, 
    PDWORD pPolicy, PDWORD pResourceIntegrityLevel, PDWORD pResourcePolicy) {
    
